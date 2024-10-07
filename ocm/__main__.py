@@ -23,7 +23,13 @@ except ImportError:
     _have_oci = False
 
 
-def _parse_yaml_or_json(path) -> dict:
+if _have_yaml:
+    _yaml_or_json_load = yaml.safe_load
+else:
+    _yaml_or_json_load = json.load
+
+
+def _parse_yaml_or_json(path) -> dict | list:
     with open(path) as f:
         if _have_yaml:
             raw = yaml.safe_load(f)
@@ -53,6 +59,7 @@ def dump(component_descriptor: ocm.ComponentDescriptor, parsed):
             fp=outfh,
             cls=ocm.EnumJSONEncoder,
         )
+    outfh.flush()
 
 
 def create(parsed):
