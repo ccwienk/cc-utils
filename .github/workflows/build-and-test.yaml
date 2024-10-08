@@ -56,6 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       effective_version: ${{ steps.version.outputs.effective_version }}
+      next_version: ${{ steps.version.outputs.next_version }}
       repo_version: ${{ steps.version.outputs.repo_version }}
       setuptools_version: ${{ steps.version.outputs.setuptools_version }}
     steps:
@@ -73,6 +74,10 @@ jobs:
         if ${{ inputs.release || false }}; then
           effective_version=${major}.${minor}.${patch}
           setuptools_version=${effective_version}
+          # hardcode to bumping "minor" for now
+          next_minor=$(( $minor + 1 ))
+          next_version="${major}.${next_minor}.${patch}-dev"
+          echo "next_version=${next_version}" >> "${GITHUB_OUTPUT}"
         else
           effective_version=${major}.${minor}.${patch}-${commit}
           setuptools_version=${src_version}
@@ -214,7 +219,14 @@ jobs:
           tgt_ref="refs/tags/${effective_version}"
           echo "pushing release-commit ${commit_digest} to ${tgt_ref}"
           git push origin "@:${tgt_ref}"
-          # todo: bump
+          next_version=${{ needs.params.version.outputs.next_version }}
+          echo "next version: ${next_version}"
+          git reset --hard @~
+          echo "${next_version}" | .ci/write-version
+          git add .
+          git commit -m"Prepare next Dev-Cycle"
+          git pull --rebase
+          git push origin
       - name: component-descriptor
         run: |
           set -eu
