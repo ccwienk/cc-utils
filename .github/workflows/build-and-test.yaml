@@ -78,6 +78,7 @@ jobs:
           next_minor=$(( $minor + 1 ))
           next_version="${major}.${next_minor}.${patch}-dev"
           echo "next_version=${next_version}" >> "${GITHUB_OUTPUT}"
+          echo "next_version=${next_version}"
         else
           effective_version=${major}.${minor}.${patch}-${commit}
           setuptools_version=${src_version}
@@ -219,7 +220,7 @@ jobs:
           tgt_ref="refs/tags/${effective_version}"
           echo "pushing release-commit ${commit_digest} to ${tgt_ref}"
           git push origin "@:${tgt_ref}"
-          next_version=${{ needs.params.version.outputs.next_version }}
+          next_version=${{ needs.version.outputs.next_version }}
           echo "next version: ${next_version}"
           git reset --hard @~
           echo "${next_version}" | .ci/write-version
