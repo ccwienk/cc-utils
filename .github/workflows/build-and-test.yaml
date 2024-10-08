@@ -212,7 +212,7 @@ jobs:
           echo "gha-creds*" >> .git/info/exclude
           git config --global --add safe.directory /__w/cc-utils/cc-utils
           git config user.name 'Gardener-CICD Bot'
-          git config user.email 'no-reply@users.noreply.github.com'
+          git config user.email 'gardener.ci.user@gmail.com'
           effective_version=${{ needs.version.outputs.effective_version }}
           echo "${effective_version}" | .ci/write-version
           git add .
