@@ -221,6 +221,7 @@ jobs:
             }' \
             > component-descriptor.yaml
 
+          echo "adding main source"
           echo "\
           name: main-source
           version: ${version}
@@ -239,6 +240,7 @@ jobs:
           | python3 -m ocm append source \
             --file component-descriptor.yaml
 
+          echo "adding resources"
           ocm_resources=${{ needs.package.outputs.ocm_resources }}
           echo "ocm-resources-file: /tmp/${ocm_resources}"
           cat "/tmp/${ocm_resources}" | \
