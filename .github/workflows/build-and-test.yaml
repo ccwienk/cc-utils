@@ -193,9 +193,12 @@ jobs:
           service_account: ${{ needs.params.outputs.gcp_service_account }}
           workload_identity_provider: ${{ needs.params.outputs.workload_identity_provider }}
       - name: Create Release-Commit
-        if: ${{ inputs.release }}
+        if: ${{ inputs.release || true }}
         run: |
-          git config --global --add safe.directory .
+          ls /
+          ls /__w
+          ls /__w/cc-utils/cc-utils
+          git config --global --add safe.directory /__w/cc-utils/cc-utils
           git config user.name 'Gardener-CICD Bot'
           git config user.email 'no-reply@users.noreply.github.com'
           effective_version=${{ needs.params.version.effective_version }}
