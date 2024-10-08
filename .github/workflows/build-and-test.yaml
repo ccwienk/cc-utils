@@ -173,6 +173,9 @@ jobs:
       - params
       - package
       - images
+    outputs:
+      release_commit_digest: ${{  steps.releasecommit.commitdigest }}
+      ocm_repository: ${{ steps.params.outputs.ocm_repository }}
     steps:
       - name: Install Packages
         run: |
@@ -193,19 +196,25 @@ jobs:
           project_id: ${{ needs.params.outputs.gcp_project }}
           service_account: ${{ needs.params.outputs.gcp_service_account }}
           workload_identity_provider: ${{ needs.params.outputs.workload_identity_provider }}
-      - name: Create Release-Commit
-        if: ${{ inputs.release || true }}
+      - name: Create Release and Bump-Commits
+        id: releasecommit
+        if: ${{ inputs.release }}
         run: |
+          echo "gha-creds*" >> .git/info/exclude
           git config --global --add safe.directory /__w/cc-utils/cc-utils
           git config user.name 'Gardener-CICD Bot'
           git config user.email 'no-reply@users.noreply.github.com'
-          effective_version=${{ needs.params.version.effective_version }}
+          effective_version=${{ needs.version.outputs.effective_version }}
           echo "${effective_version}" | .ci/write-version
           git add .
           git commit -m "Release ${effective_version}"
           git show
-          echo "XXX would now push to refs/tags/${effective_version}"
-          # todo: actually push + create and push bump-commit
+          commit_digest=$(git rev-parse @)
+          echo "release_commit_digest=${commit_digest}" >> "${GITHUB_OUTPUT}"
+          tgt_ref="refs/tags/${effective_version}"
+          echo "pushing release-commit ${commit_digest} to ${tgt_ref}"
+          git push origin "@:${tgt_ref}"
+          # todo: bump
       - name: component-descriptor
         run: |
           set -eu
@@ -239,6 +248,12 @@ jobs:
             }' \
             > component-descriptor.yaml
 
+          if ${{ inputs.release || false }}; then
+            commit_digest=${{ steps.releasecommit.outputs.release_commit_digest || '' }}
+          else
+            commit_digest=${{ github.sha }}
+          fi
+
           echo "adding main source"
           echo "\
           name: main-source
@@ -252,7 +267,7 @@ jobs:
             type: github
             repoUrl: github.com/${{ github.repository }}
             version: ${version}
-            commit: ${{ github.sha }}
+            commit: ${commit_digest}
             ref: ${{ github.ref }}
           " \
           | python3 -m ocm append source \
