@@ -177,6 +177,7 @@ jobs:
       - name: Install Packages
         run: |
           apk add --no-cache \
+            bash \
             git
       - uses: actions/checkout@v4
       - name: Retrieve Distribution Packages
@@ -195,9 +196,6 @@ jobs:
       - name: Create Release-Commit
         if: ${{ inputs.release || true }}
         run: |
-          ls /
-          ls /__w
-          ls /__w/cc-utils/cc-utils
           git config --global --add safe.directory /__w/cc-utils/cc-utils
           git config user.name 'Gardener-CICD Bot'
           git config user.email 'no-reply@users.noreply.github.com'
