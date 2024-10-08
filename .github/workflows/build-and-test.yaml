@@ -84,7 +84,7 @@ jobs:
           setuptools_version=${src_version}
         fi
         echo "effective-version: ${effective_version}"
-        echo "effective_version=${effective_version}" > "${GITHUB_OUTPUT}"
+        echo "effective_version=${effective_version}" >> "${GITHUB_OUTPUT}"
         echo "repo_version=${src_version}" >> "${GITHUB_OUTPUT}"
         echo "setuptools_version=${setuptools_version}" >> "${GITHUB_OUTPUT}"
 
