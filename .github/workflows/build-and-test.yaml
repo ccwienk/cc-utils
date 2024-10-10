@@ -313,6 +313,11 @@ jobs:
             --file component-descriptor.yaml
 
           echo "adding linting-evidence resource"
+          pwd
+          ls bandit*
+          echo "-------------------------"
+          ls
+          echo "xxxxxxxxxxxxxxxxxxxxxx"
           linting_evidence=bandit.tar.gz
           linting_digest=$(sha256sum ${linting_evidence} | cut -d' ' -f1)
           cp bandit.tar.gz /tmp/dist/blobs.d/${linting_digest}
