@@ -57,5 +57,5 @@ runs:
         EOF
         docker_cfg="$(cat "${docker_cfg_path}" | tr -d "\n")"
 
-      echo "docker_cfg=${docker_cfg}" >> ${GITHUB_OUTPUT}
-      echo "access_token=${token}" >> ${GITHUB_OUTPUT}
+        echo "docker_cfg=${docker_cfg}" >> ${GITHUB_OUTPUT}
+        echo "access_token=${token}" >> ${GITHUB_OUTPUT}
