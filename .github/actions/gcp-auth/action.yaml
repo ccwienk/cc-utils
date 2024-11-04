@@ -39,6 +39,7 @@ runs:
         service_account: ${{ inputs.gcp_service_account }}
         workload_identity_provider: ${{ inputs.workload_identity_provider }}
     - name: Export Access-Token
+      shell: bash
       run: |
         username=oauth2accesstoken
         password=${{ steps.auth.outputs.access_token }}
