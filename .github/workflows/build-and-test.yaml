@@ -1,7 +1,7 @@
 name: Build and Test
 run-name: Building and testing
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       release:
         required: false
@@ -11,6 +11,13 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      release-commit-objects:
+        description: release-commit-objects (for importing release-commit)
+        value: ${{ jobs.version.outputs.release-commit-objects }}
+      release-commit-digest:
+        description: release-commit's digest
+        value: ${{ jobs.version.outputs.release-commit-digest }}
   push:
 
 jobs:
@@ -236,39 +243,6 @@ jobs:
         with:
           name: linting-logs # targetpath: bandit.tar.gz
           path: /tmp/linting-logs
-      - name: Retrieve Documentation
-        uses: actions/download-artifact@v4
-        with:
-          name: documentation
-          path: /tmp/documentation-out.d
-      - name: Import Release-Commit
-        if: ${{ inputs.release }}
-        uses: ./.github/actions/import-commit
-        with:
-          commit-objects: ${{ needs.version.release-commit-objects }}
-          commit-digest: ${{ needs.version.release-commit-digest }}
-
-      - name: Push Release and Bump-Commits
-        id: releasecommit
-        if: ${{ inputs.release }}
-        run: |
-          echo "gha-creds*" >> .git/info/exclude
-          git config --global --add safe.directory $PWD
-          git config user.name 'Gardener-CICD Bot'
-          git config user.email 'gardener.ci.user@gmail.com'
-          effective_version=${{ needs.version.outputs.effective_version }}
-          commit_digest=$(git rev-parse @)
-          tgt_ref="refs/tags/${effective_version}"
-          echo "pushing release-commit ${commit_digest} to ${tgt_ref}"
-          git push origin "@:${tgt_ref}"
-          next_version=${{ needs.version.outputs.next_version }}
-          echo "next version: ${next_version}"
-          git reset --hard @~
-          echo "${next_version}" | .ci/write-version
-          git add .
-          git commit -m"Prepare next Dev-Cycle"
-          git pull --rebase
-          git push origin
       - name: GAR-Auth
         id: auth
         uses: ./.github/actions/gar-auth
@@ -378,25 +352,6 @@ jobs:
           python -m ocm upload \
             --file component-descriptor.yaml \
             --blobs-dir /tmp/dist/blobs.d
-      - name: Publish Documentation
-        if: ${{ inputs.release }}
-        run: |
-          git fetch origin gh-pages
-          git checkout gh-pages
-          git clean -dfx
-          git status
-          echo "let's hope our worktree is clean"
-          tar c -C /tmp/documentation-out.d . | tar x -C.
-          git status
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "no changes in documentation - no need to update documentation"
-            git checkout master # needed for post-gar
-            exit 0
-          fi
-          git add -A
-          git commit -m "update documentation"
-          git push origin refs/heads/gh-pages
-          git checkout master # needed for post-gar
 
   lint:
     runs-on: ubuntu-latest
