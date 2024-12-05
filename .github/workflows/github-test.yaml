@@ -1,0 +1,27 @@
+name: Github-Test
+on:
+  push:
+
+jobs:
+  params:
+    runs-on: ubuntu-latest
+    container:
+      image: python:alpine
+    steps:
+      - name: test-github-api
+        id: test
+        run: |
+          pip install github3.py
+
+          token=${GITHUB_TOKEN}
+          echo "token: ${{ secrets.GITHUB_TOKEN }}"
+          echo ${GITHUB_TOKEN} | wc -l
+
+          python --version
+          python -c \
+          "
+          import github3
+          api = github3.GitHub(token='${{ secrets.GITHUB_TOKEN }}')
+          print(api)
+          repository = api.repository('ccwienk', 'interview-challenge')
+          "
