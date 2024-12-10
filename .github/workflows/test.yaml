@@ -1,0 +1,32 @@
+name: Test
+on:
+  push:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: install git
+        run: |
+          if ! which git &>/dev/null; then
+            apt-get install git -y
+          fi
+      - uses: actions/checkout@v4
+      - name: inspect filesystem
+        run: |
+          git config --global --add safe.directory $PWD
+          git config user.name 'Gardener-CICD Bot'
+          git config user.email 'gardener.ci.user@gmail.com'
+
+          echo "git-cfg"
+          git config -l
+
+          echo "--- .git/config"
+          cat .git/config
+
+          echo "---------------"
+          env | sort
