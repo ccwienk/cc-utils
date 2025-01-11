@@ -56,7 +56,7 @@ on:
         description: |
           Base-Component-Descriptor is exposed both via output (component-descriptor) and as
           artefact. If needed, target-artefact-name can be configured through this input.
-    inputs:
+    outputs:
       component-descriptor:
         description: |
           The generated Base OCM-Component-Descriptor (in YAML format)
