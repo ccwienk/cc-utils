@@ -1,0 +1,52 @@
+name: Test
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      test-input-1:
+        default: |
+          first line
+          second line
+
+      test-input-2:
+        default: 42
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-release-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: install git
+        run: |
+          if ! which git &>/dev/null; then
+            apt-get install git -y
+          fi
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/install-gardener-gha-libs
+      - name: try-use-release-notes
+        uses: ./.github/actions/release-notes
+      - name: inspect-filesystem
+        run: |
+          echo "test"
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: install git
+        run: |
+          if ! which git &>/dev/null; then
+            apt-get install git -y
+          fi
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/install-gardener-gha-libs
+      - name: inspect
+        run: |
+          echo "${{ inputs.test-input-1 }}"
+          echo "---"
+          pip install actions-python-core
+          echo xxx
+
+          python -c "import actions.core; print(actions.core.get_input('test-input-1'))"
+          echo yy
