@@ -7,7 +7,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>release Trait &mdash; cc-utils  documentation</title>
-      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/css/custom.css" />
 
@@ -281,7 +281,13 @@ avoid a conflict)</p></td>
 <td><p>str | None</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-even"><td><p>github_asset_name</p></td>
+<tr class="row-even"><td><p>upload_as_github_asset</p></td>
+<td><p>no</p></td>
+<td><p>True</p></td>
+<td><p>bool</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>github_asset_name</p></td>
 <td><p>no</p></td>
 <td><p>None</p></td>
 <td><p>str | None</p></td>
@@ -348,31 +354,37 @@ avoid a conflict)</p></td>
 <td><p>str | None</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-even"><td><p>github_asset_name</p></td>
+<tr class="row-even"><td><p>upload_as_github_asset</p></td>
+<td><p>no</p></td>
+<td><p>True</p></td>
+<td><p>bool</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>github_asset_name</p></td>
 <td><p>no</p></td>
 <td><p>None</p></td>
 <td><p>str | None</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-odd"><td><p>step_output_dir</p></td>
+<tr class="row-even"><td><p>step_output_dir</p></td>
 <td><p>yes</p></td>
 <td><p>None</p></td>
 <td><p>str</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-even"><td><p>path</p></td>
+<tr class="row-odd"><td><p>path</p></td>
 <td><p>yes</p></td>
 <td><p>None</p></td>
 <td><p>str</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-odd"><td><p>prefix</p></td>
+<tr class="row-even"><td><p>prefix</p></td>
 <td><p>no</p></td>
 <td><p>None</p></td>
 <td><p>str | None</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-even"><td><p>mode</p></td>
+<tr class="row-odd"><td><p>mode</p></td>
 <td><p>no</p></td>
 <td><p><code class="code docutils literal notranslate"><span class="pre">tar</span></code></p></td>
 <td><p>FileAssetMode</p></td>
@@ -453,6 +465,9 @@ avoid a conflict)</p></td>
 </tr>
 <tr class="row-even"><td><p>tag_and_merge_back</p></td>
 <td><p>publish release tag to dead-end and merge back release commit to default branch</p></td>
+</tr>
+<tr class="row-odd"><td><p>skip</p></td>
+<td><p>neither create, nor publish either of release- and bump-commits</p></td>
 </tr>
 </tbody>
 </table>
