@@ -227,8 +227,12 @@ runs:
       run: |
         # reset back to (current) head of branch for which release-job was started
         # (this will avoid merge-conflicts)
+        echo "debug: before fetch"
+        git log
         git fetch origin "${{ github.ref }}"
         git rebase
+        echo "debug: after fetch"
+        git log
 
     - name: create-bump-commit
       id: bump
@@ -243,4 +247,6 @@ runs:
     - name: push-bump-commit
       shell: bash
       run: |
+        echo "debug: before push"
+        git log
         git push origin "${{ github.ref }}"
