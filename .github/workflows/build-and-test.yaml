@@ -208,7 +208,7 @@ jobs:
         find "${pkg_dir}"
         tar czf distribution-packages.tar.gz dist
     - name: export-ocm-fragments
-      uses: gardener/cc-utils/.github/actions/export-ocm-fragments@master
+      uses: ./.github/actions/export-ocm-fragments
       with:
         ocm-resources-file: dist/ocm_resources.yaml
         blobs-directory: dist/blobs.d
@@ -278,7 +278,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: gardener/cc-utils/.github/actions/install-gardener-gha-libs@master
       - name: import-and-merge-ocm-fragments
-        uses: gardener/cc-utils/.github/actions/merge-ocm-fragments@master
+        uses: ./.github/actions/merge-ocm-fragments
         with:
           component-descriptor: ${{ needs.base-component-descriptor.outputs.component-descriptor }}
           outdir: .
