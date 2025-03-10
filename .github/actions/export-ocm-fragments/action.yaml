@@ -126,6 +126,7 @@ runs:
         import tempfile
         import pprint
 
+        import magic
         import yaml
 
         import export_ocm
@@ -232,6 +233,9 @@ runs:
           access['localReference'] = hashname
           access['size'] = os.stat(local_fpath).st_size
           print(f'INFO: patched {artefact["name"]}\'s access to {hashname=} (was: {local_ref=})')
+
+          if not 'type' in artefact:
+            artefact['type'] = magic.detect_from_filename(local_ref).mime_type
 
         ocm_artefacts_info.size = len(ocm_artefacts_yaml_bytes)
         buf = io.BytesIO(ocm_artefacts_yaml_bytes)
