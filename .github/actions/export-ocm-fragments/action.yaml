@@ -177,7 +177,10 @@ runs:
           ocm_artefacts_fname = f'{ctx}-{ocm_artefacts_fname}'
 
         ocm_tar = tarfile.open(
-          name=tempfile.NamedTemporaryFile(delete=False).name,
+          name=tempfile.NamedTemporaryFile(
+            delete=False,
+            dir='.', # do not use /tmp to avoid unnecessary copy after finalised
+          ).name,
           mode='w:gz',
         )
 
