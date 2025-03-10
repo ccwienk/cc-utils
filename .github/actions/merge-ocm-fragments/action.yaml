@@ -133,6 +133,17 @@ runs:
 
           os.unlink(path)
 
+        # preprocess: patch-in versions for local artefacts
+        cversion = component.get('version', None)
+        for artefact in component['sources'] + component['resources']:
+          if not cversion:
+            continue
+          if artefact.get('version', None):
+            continue # existing data has precedence
+          if not artefact.get('relation') == 'local':
+            continue # we only patch-in version for local artefacts
+          artefact['version'] = cversion
+
         pprint.pprint(component_descriptor)
 
         with open(component_descriptor_path, 'w') as f:
