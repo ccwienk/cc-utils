@@ -170,12 +170,6 @@ runs:
 
         pprint.pprint(ocm_artefacts)
 
-        ocm_artefacts_yaml_bytes = yaml.safe_dump(ocm_artefacts).encode('utf-8')
-        ocm_artefacts_digest = hashlib.sha1(ocm_artefacts_yaml_bytes).hexdigest()
-        ocm_artefacts_fname = f'{ocm_artefacts_digest}.ocm-artefacts'
-        if ctx := '${{ inputs.ctx }}':
-          ocm_artefacts_fname = f'{ctx}-{ocm_artefacts_fname}'
-
         ocm_tar = tarfile.open(
           name=tempfile.NamedTemporaryFile(
             delete=False,
@@ -183,8 +177,6 @@ runs:
           ).name,
           mode='w:gz',
         )
-
-        ocm_artefacts_info = tarfile.TarInfo(name=ocm_artefacts_fname)
 
         orig_name_to_digest_names = dict()
         # add blobs
@@ -240,7 +232,15 @@ runs:
           if not 'type' in artefact:
             artefact['type'] = magic.detect_from_filename(local_ref).mime_type
 
+        ocm_artefacts_yaml_bytes = yaml.safe_dump(ocm_artefacts).encode('utf-8')
+        ocm_artefacts_digest = hashlib.sha1(ocm_artefacts_yaml_bytes).hexdigest()
+        ocm_artefacts_fname = f'{ocm_artefacts_digest}.ocm-artefacts'
+        if ctx := '${{ inputs.ctx }}':
+          ocm_artefacts_fname = f'{ctx}-{ocm_artefacts_fname}'
+
+        ocm_artefacts_info = tarfile.TarInfo(name=ocm_artefacts_fname)
         ocm_artefacts_info.size = len(ocm_artefacts_yaml_bytes)
+
         buf = io.BytesIO(ocm_artefacts_yaml_bytes)
         ocm_tar.addfile(ocm_artefacts_info, buf)
 
