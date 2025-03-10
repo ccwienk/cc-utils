@@ -230,7 +230,9 @@ runs:
           print(f'INFO: patched {artefact["name"]}\'s access to {hashname=} (was: {local_ref=})')
 
           if not 'type' in artefact:
-            artefact['type'] = magic.detect_from_filename(local_ref).mime_type
+            artefact['type'] = magic.detect_from_filename(
+              os.path.join(blobs_dir, local_ref),
+            ).mime_type
 
         ocm_artefacts_yaml_bytes = yaml.safe_dump(ocm_artefacts).encode('utf-8')
         ocm_artefacts_digest = hashlib.sha1(ocm_artefacts_yaml_bytes).hexdigest()
