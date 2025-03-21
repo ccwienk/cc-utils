@@ -198,19 +198,19 @@ jobs:
             we use bandit (linter) for SAST scans
             see: https://bandit.readthedocs.io/en/latest/
 
-  update-draft-relase:
-    if: ${{ inputs.mode != 'release' &&
-          github.ref_name == github.event.repository.default_branch &&
-          ! fromJSON(needs.params.outputs.is-fork)
-      }}
-    needs:
-      - params
-      - base-component-descriptor
-    uses: ./.github/workflows/draft-release.yaml
-    with:
-      component-descriptor: ${{ needs.base-component-descriptor.outputs.component-descriptor }}
-      ocm-repositories: ${{ needs.params.outputs.ocm-releases-repository }}
-
+#  update-draft-relase:
+#    if: ${{ inputs.mode != 'release' &&
+#          github.ref_name == github.event.repository.default_branch &&
+#          ! fromJSON(needs.params.outputs.is-fork)
+#      }}
+#    needs:
+#      - params
+#      - base-component-descriptor
+#    uses: ./.github/workflows/draft-release.yaml
+#    with:
+#      component-descriptor: ${{ needs.base-component-descriptor.outputs.component-descriptor }}
+#      ocm-repositories: ${{ needs.params.outputs.ocm-releases-repository }}
+#
   lint:
     runs-on: ubuntu-latest
     needs:
