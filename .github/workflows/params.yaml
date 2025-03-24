@@ -22,7 +22,7 @@ on:
         value: ${{ jobs.params.outputs.oci-registry }}
       is-fork:
         description: boolean indicating whether or not current repository is a fork
-        value: ${{ fromJSON( jobs.params.outputs.is-fork ) }}
+        value: ${{ jobs.params.outputs.is-fork }}
 
 jobs:
   params:
