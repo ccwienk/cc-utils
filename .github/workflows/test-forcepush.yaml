@@ -1,0 +1,38 @@
+name: test-forcepush
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ccwienk/cc-utils # explicit is better than implicit
+      - uses: ccwienk/cc-utils/.github/actions/setup-git-identity@master
+      - name: test-forcepush
+        shell: bash
+        run: |
+          git commit --allow-empty -m "test commit"
+
+          git push origin +@:refs/heads/tmp
+
+          pr_url=$(gh pr create \
+            --title test \
+            --body test \
+            --base master \
+            --head tmp
+          )
+
+          pr_id=$(echo $pr_url | cut -d/ -f7)
+
+          echo "pr-id: ${pr_id}"
+
+          gh pr merge ${pr_id}
