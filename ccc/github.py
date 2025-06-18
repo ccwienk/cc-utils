@@ -15,7 +15,6 @@ import github3.github
 import github3.session
 
 import ci.util
-import github.util
 import http_requests
 import model
 import model.github
@@ -83,44 +82,6 @@ def github_api_ctor(
             verify=verify_ssl,
             session=session,
         )
-
-
-def repo_helper(
-    host: str,
-    org: str,
-    repo: str,
-    branch: str='master',
-    session_adapter: SessionAdapter=SessionAdapter.RETRY,
-):
-    api = github_api(
-        github_cfg=github_cfg_for_repo_url(repo_url=ci.util.urljoin(host, org, repo)),
-        session_adapter=session_adapter,
-    )
-
-    return github.util.GitHubRepositoryHelper(
-        owner=org,
-        name=repo,
-        github_api=api,
-        default_branch=branch,
-    )
-
-
-def pr_helper(
-    host: str,
-    org: str,
-    repo: str,
-    session_adapter: SessionAdapter=SessionAdapter.RETRY,
-):
-    api = github_api(
-        github_cfg=github_cfg_for_repo_url(repo_url=ci.util.urljoin(host, org, repo)),
-        session_adapter=session_adapter,
-    )
-
-    return github.util.PullRequestUtil(
-        owner=org,
-        name=repo,
-        github_api=api,
-    )
 
 
 def github_api(

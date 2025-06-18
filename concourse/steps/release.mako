@@ -57,6 +57,7 @@ ocm_repository_mappings = component_descriptor_trait.ocm_repository_mappings()
 
 release_callback_path = release_trait.release_callback_path()
 next_version_callback_path = release_trait.next_version_callback_path()
+post_release_callback_path = release_trait.post_release_callback_path()
 
 release_notes_policy = release_trait.release_notes_policy()
 if release_notes_policy is ReleaseNotesPolicy.DEFAULT:
@@ -125,6 +126,7 @@ import concourse.util
 import ocm
 import ocm.upload
 import ocm.util
+import release_notes.ocm
 import github.release
 import github.util
 import gitutil
@@ -383,11 +385,9 @@ git_helper = gitutil.GitHelper(
   ),
 )
 branch = repository_branch
-github_helper = github.util.GitHubRepositoryHelper(
-  owner=repo_owner,
-  name=repo_name,
-  github_api=github_api,
-  default_branch=branch,
+repository = github_api.repository(
+  repo_owner,
+  repo_name,
 )
 
 % if release_trait.rebase_before_release():
@@ -428,7 +428,7 @@ tags = _calculate_tags(
 )
 
 if have_tag_conflicts(
-  github_helper=github_helper,
+  repository=repository,
   tags=tags,
 ):
   exit(1)
@@ -484,7 +484,7 @@ if release_notes_md:
 
   component.resources.append(
     ocm.Resource(
-      name='release-notes',
+      name=release_notes.ocm.release_notes_resource_name,
       version=component.version,
       type='text/markdown.release-notes',
       access=ocm.LocalBlobAccess(
@@ -504,9 +504,8 @@ uploaded_oci_manifest_bytes = ocm.upload.upload_component_descriptor(
 )
 
 % if release_trait.release_on_github():
-repo = github_helper.repository
 try:
-  for releases, succeeded in github.release.delete_outdated_draft_releases(repo):
+  for releases, succeeded in github.release.delete_outdated_draft_releases(repository):
     if succeeded:
       logger.info(f'deleted {release.name=}')
     else:
@@ -525,19 +524,19 @@ release_tag = tags[0].removeprefix('refs/tags/')
 draft_tag = f'{version_str}-draft'
 
 if release_notes_md is not None:
-  release_notes_md, truncated_release_notes  = github.release.body_or_replacement(
+  release_notes_md, is_full_release_notes  = github.release.body_or_replacement(
     body=release_notes_md,
   )
 else:
-  truncated_release_notes = False
+  is_full_release_notes = False
 
 
 gh_release = github.release.find_draft_release(
-  repository=repo,
+  repository=repository,
   name=draft_tag,
 )
 if not gh_release:
-  gh_release = repo.create_release(
+  gh_release = repository.create_release(
     tag_name=release_tag,
     body=release_notes_md or '',
     draft=False,
@@ -552,7 +551,7 @@ else:
     prerelease=False,
   )
 
-if truncated_release_notes:
+if release_notes_md is not None and not is_full_release_notes:
   gh_release.upload_asset(
     content_type='application/markdown',
     name='release-notes.md',
@@ -581,7 +580,6 @@ try:
 
   create_and_push_mergeback_commit(
     git_helper=git_helper,
-    github_helper=github_helper,
     tags=tags,
     branch=branch,
     merge_commit_message_prefix='${mergeback_commit_msg_prefix or ''}',
@@ -636,5 +634,13 @@ except:
   logger.warning('An error occurred whilst trying to post release-notes to slack')
   traceback.print_exc()
   % endfor
+% endif
+
+% if post_release_callback_path:
+_invoke_callback(
+  repo_dir=git_helper.repo.working_tree_dir,
+  effective_version=version_str,
+  callback_script_path='${post_release_callback_path}',
+)
 % endif
 </%def>

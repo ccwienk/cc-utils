@@ -17,11 +17,11 @@ FROM alpine:3
 
 
 ARG DOCKER_CHANNEL=stable
-ARG DOCKER_VERSION=28.0.4
+ARG DOCKER_VERSION=28.2.2
 ENV PATH=$PATH:/opt/docker
 ARG TARGETARCH
 
-ARG DOCKER_BUILDX_VERSION=v0.22.0
+ARG DOCKER_BUILDX_VERSION=v0.24.0
 
 COPY --from=builder /pkgs/usr /usr
 
@@ -50,8 +50,6 @@ if [ -z "${TARGETARCH}" ]; then TARGETARCH="amd64"; fi \
 &&  curl http://aia.pki.co.sap.com/aia/SAP%20Global%20Root%20CA.crt -o \
   /usr/local/share/ca-certificates/SAP_Global_Root_CA.crt \
 && echo "before second aia" \
-&& curl http://aia.pki.co.sap.com/aia/SAPNetCA_G2.crt -o \
-    /usr/local/share/ca-certificates/SAPNetCA_G2.crt \
 && curl -Lo /usr/local/share/ca-certificates/SAPNetCA_G2_2.crt \
     http://aia.pki.co.sap.com/aia/SAPNetCA_G2_2.crt \
 && update-ca-certificates \

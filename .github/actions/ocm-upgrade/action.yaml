@@ -1,0 +1,154 @@
+name: OCM-Upgrade
+description: |
+  An action creating upgrade-pullrequests for referenced OCM-Components
+
+inputs:
+  component-descriptor:
+    description: |
+      The effective OCM-Component-Descriptor based on which Upgrade-Pullrequests should be
+      created.
+    type: string
+    required: true
+  ocm-repositories:
+    description: |
+      A comma-separated list of OCM-Repositories that should be used to lookup Component-Versions.
+    required: true
+  github-token:
+    description: |
+      auth-token used for pushing upgrade-pullrequest-commit and for creating PullRequests.
+    type: string
+    required: true
+  merge-policy:
+    description: |
+      Controls what should happen to newly created upgrade-pullrequests.
+    type: choice
+    default: manual
+    options:
+      - automerge
+      - manual
+  merge-method:
+    description: |
+      Sets the merge-method (only used if merge-policy is set to automerge)
+    type: choice
+    default: merge
+    options:
+      - rebase
+      - merge
+      - squash
+
+runs:
+  using: composite
+  steps:
+    - uses: gardener/cc-utils/.github/actions/install-gardener-gha-libs@master
+    - uses: actions/checkout@v4
+      with:
+        token: ${{  inputs.github-token }}
+    - uses: gardener/cc-utils/.github/actions/setup-git-identity@master
+    - name: write-component-descriptor
+      shell: bash
+      run: |
+        cat <<EOF > /tmp/component-descriptor.yaml
+        ${{ inputs.component-descriptor }}
+        EOF
+        cat <<EOF > /tmp/ocm-repositories
+        ${{ inputs.ocm-repositories }}
+        EOF
+        cat <<EOF > /tmp/github-token
+        ${{ inputs.github-token }}
+        EOF
+    - name: create-and-update-upgrade-pullrequests
+      shell: python
+      run: |
+        import os
+        import sys
+
+        sys.path.insert(1, os.environ['GITHUB_ACTION_PATH'])
+
+        import logging
+
+        import yaml
+
+        import github
+        import github.pullrequest
+        import ocm
+        import ocm.gardener
+
+        import ocm_upgrade
+
+        logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+        logger = logging.getLogger('ugrade-ocm')
+
+        # silence annoying loggers
+        logging.getLogger('github3').setLevel(logging.WARN)
+        logging.getLogger('urllib3').setLevel(logging.WARN)
+
+        with open('/tmp/component-descriptor.yaml') as f:
+          raw = yaml.safe_load(f)
+
+        component_descriptor = ocm.ComponentDescriptor.from_dict(raw)
+        component = component_descriptor.component
+
+        with open('/tmp/ocm-repositories') as f:
+          ocm_repositories = f.read().strip().split(',')
+
+        logger.info(f'{ocm_repositories=}')
+
+        oci_client, component_descriptor_lookup, version_lookup = ocm_upgrade.create_ocm_lookups(
+          ocm_repositories=ocm_repositories,
+        )
+
+        merge_method = '${{ inputs.merge-method }}'
+        merge_policy = '${{ inputs.merge-policy }}'
+        if merge_policy == 'automerge':
+          auto_merge = True
+        elif merge_policy == 'manual':
+          auto_merge = False
+        else:
+          raise ValueError(f'unspected {merge_policy=}')
+
+        with open('/tmp/github-token') as f:
+          github_token = f.read().strip()
+
+        host, org, repo = github.host_org_and_repo()
+        github_api = github.github_api(token=github_token)
+        repository = github_api.repository(org, repo)
+
+        def github_api_lookup(repo_url):
+          # XXX needs to be extended for cross-github-support
+          return github_api
+
+        repo_dir = os.getcwd()
+
+        logger.info('retrieving existing upgrade-pull-requests')
+
+        upgrade_pullrequests = tuple(
+          github.pullrequest.iter_upgrade_pullrequests(
+            repository=repository,
+            state='all',
+          )
+        )
+
+        logger.info(f'found {len(upgrade_pullrequests)=}')
+
+        ocm_upgrade.create_upgrade_pullrequests(
+          component=component,
+          component_descriptor_lookup=component_descriptor_lookup,
+          version_lookup=version_lookup,
+          github_api_lookup=github_api_lookup,
+          repo_dir=repo_dir,
+          repo_url=f'https://{host}/{org}/{repo}',
+          repository=repository,
+          auto_merge=auto_merge,
+          merge_method=merge_method,
+          branch='${{ github.ref_name }}',
+          oci_client=oci_client,
+        )
+
+        summary = f'''\
+        ## Upgrade-Dependencies-Summary
+
+        Found {len(upgrade_pullrequests)=}.
+        '''
+
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+          f.write(summary)

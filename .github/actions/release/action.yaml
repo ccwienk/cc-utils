@@ -27,7 +27,13 @@ inputs:
   release-commit-objects:
     description: |
       release-commit in serialised form (as output by `capture-commit` action)
-    required: true
+
+      Either this input, or `release-commit-objects-artefact` must be passed.
+    required: false
+  release-commit-objects-artefact:
+    description: |
+      name of artefact (as published from capture-commit action) to use.
+    required: false
   release-commit-digest:
     description: |
       release-commit-digest (necessary, unless capture-commit's special-ref is not present)
@@ -56,6 +62,11 @@ inputs:
       passed to `version` action as `commit-message`. see this action for documentation
     required: false
     default: 'next version: ${version}'
+  next-version-callback-action-path:
+    type: string
+    required: false
+    description: |
+      passed to `version` action as `callback-action-path`
   version-read-callback:
     type: string
     description: |
@@ -77,9 +88,14 @@ inputs:
     required: false
   github-token:
     description: |
-      the github-auth-token to use for authenticating against GitHub.
+      the github-auth-token to use for authenticating against GitHub and OCI-Registry.
       Use `secrets.GITHUB_TOKEN`
     required: true
+  git-push-token:
+    description: |
+      an auth-token to use for pushing release- and bump-commits. Must grant the privilege to
+      bypass branch-protection-rules, if present.
+    required: false
 
 defaults:
   run:
@@ -91,9 +107,12 @@ runs:
     - name: install-gardener-gha-libs
       uses: gardener/cc-utils/.github/actions/install-gardener-gha-libs@master
     - uses: actions/checkout@v4
+      with:
+        token: ${{ inputs.git-push-token || inputs.github-token }}
     - name: import-release-commit
       uses: gardener/cc-utils/.github/actions/import-commit@master
       with:
+        commit-objects-artefact: ${{ inputs.release-commit-objects-artefact }}
         commit-objects: ${{ inputs.release-commit-objects }}
         commit-digest: ${{ inputs.release-commit-digest }}
         after-import: rebase
@@ -151,6 +170,7 @@ runs:
 
         import yaml
 
+        import release_notes.ocm
         import oci.client
         import oci.auth
         import ocm
@@ -183,7 +203,7 @@ runs:
 
         component.resources.append(
           ocm.Resource(
-            name='release-notes',
+            name=release_notes.ocm.release_notes_resource_name,
             version=component.version,
             type='text/markdown.release-notes',
             access=ocm.LocalBlobAccess(
@@ -332,6 +352,7 @@ runs:
         read-callback: ${{ inputs.version-read-callback }}
         write-callback: ${{ inputs.version-write-callback }}
         version-operation: ${{ inputs.next-version }}
+        callback-action-path: ${{ inputs.next-version-callback-action-path }}
         prerelease: 'dev'
         commit-message: ${{ inputs.next-version-commit-message }}
         repository-operation: commit-to-head

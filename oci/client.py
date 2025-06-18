@@ -251,10 +251,19 @@ def _scope(image_reference: str | om.OciImageReference, action: str):
     return scope
 
 
+def no_credentials_lookup(*args, **kwargs) -> None:
+    '''
+    a lookup that never returns credentials, regardless of passed arguments.
+
+    Concenience-Shorthand for cases where no credentials are available.
+    '''
+    return None
+
+
 class Client:
     def __init__(
         self,
-        credentials_lookup: collections.abc.Callable,
+        credentials_lookup: collections.abc.Callable=no_credentials_lookup,
         routes: OciRoutes=OciRoutes(),
         disable_tls_validation: bool=False,
         timeout_seconds: int=None,
@@ -264,6 +273,7 @@ class Client:
     ):
         '''
         @param credentials_lookup <Callable>
+            defaults to no credentials, leading to anonymous-auth attempt
         @param routes <OciRoutes>
         @param disable_tls_validation <bool>
         @param timeout_seconds <int>
@@ -598,6 +608,12 @@ class Client:
 
         manifest_dict = res.json()
 
+        # workaround: not all manifests contain `mediaType`
+        # -> fallback to content-type header
+        if not 'mediaType' in manifest_dict:
+            if (media_type := res.headers.get('Content-Type')):
+                manifest_dict['mediaType'] = media_type
+
         if manifest_dict.get('mediaType') in (
             om.DOCKER_MANIFEST_LIST_MIME,
             om.OCI_IMAGE_INDEX_MIME,
@@ -814,6 +830,7 @@ class Client:
         image_reference: om.OciImageReference | str,
         purge: bool=False,
         accept: str=om.MimeTypes.prefer_multiarch,
+        absent_ok: bool=False,
     ):
         '''
         deletes the specified manifest. Depending on whether the passed image_reference contains
@@ -839,7 +856,7 @@ class Client:
             else:
                 headers = {}
 
-            return self._request(
+            res = self._request(
                 url=self.routes.manifest_url(
                     image_reference=image_reference,
                     tag_preprocessing_callback=self.tag_preprocessing_callback,
@@ -848,7 +865,15 @@ class Client:
                 scope=scope,
                 headers=headers,
                 method='DELETE',
+                raise_for_status=False,
             )
+
+            if absent_ok and res.status_code == 404:
+                return res
+
+            res.raise_for_status()
+
+            return res
         elif image_reference.has_symbolical_tag:
             manifest_raw = self.manifest_raw(
                 image_reference=image_reference,
@@ -860,11 +885,13 @@ class Client:
                 image_reference=image_reference,
                 purge=False,
                 accept=accept,
+                absent_ok=absent_ok,
             )
             res.raise_for_status()
             return self.delete_manifest(
                 image_reference=f'{image_reference.ref_without_tag}@{manifest_digest}',
                 purge=False,
+                absent_ok=absent_ok,
             )
         else:
             raise RuntimeError('this case should not occur (this is a bug)')

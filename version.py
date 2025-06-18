@@ -180,7 +180,7 @@ def parse_to_semver(
     return semver_version_info
 
 
-def _parse_to_semver_and_prefix(version: str) -> semver.VersionInfo:
+def _parse_to_semver_and_prefix(version: str) -> tuple[semver.VersionInfo, str | None]:
     def raise_invalid():
         raise ValueError(f'not a valid (semver) version: `{version}`')
 
@@ -345,13 +345,24 @@ def process_version(
 T = typing.TypeVar('T', semver.VersionInfo, str)
 
 
-def find_latest_version(
+def greatest_version(
     versions: Iterable[T],
     ignore_prerelease_versions: bool=False,
     invalid_semver_ok: bool=False,
+    min_version: semver.VersionInfo | str=None,
 ) -> T | None:
-    latest_candidate = None
-    latest_candidate_semver = None
+    '''
+    returns the greatest version from the passed versions. versions are parsed as semver versions
+    using gardener's relaxed semver (which allows a `v` prefix, as well as omitting the patchlevel).
+    if `ignore_prerelease_versions` is set to True, only final release versions will be considered.
+    if `invalid_semver_ok` is set to True, versions that are not valid (relaxed) semver versions
+    are silently ignored (will raise otherwise).
+
+    If `min_version` is given, only versions greater than min_version will be returned. If the
+    greatest passed-in version is smaller than or equal to min_version, None will be returned.
+    '''
+    greatest_candidate = None
+    greatest_candidate_semver = None
 
     for candidate in versions:
         if isinstance(candidate, str):
@@ -368,20 +379,22 @@ def find_latest_version(
         if ignore_prerelease_versions and candidate_semver.prerelease:
             continue
 
-        if not latest_candidate_semver:
-            latest_candidate_semver = candidate_semver
-            latest_candidate = candidate
+        if not greatest_candidate_semver:
+            greatest_candidate_semver = candidate_semver
+            greatest_candidate = candidate
             continue
 
-        if candidate_semver > latest_candidate_semver:
-            latest_candidate_semver = candidate_semver
-            latest_candidate = candidate
+        if candidate_semver > greatest_candidate_semver:
+            greatest_candidate_semver = candidate_semver
+            greatest_candidate = candidate
 
-    return latest_candidate
+    if min_version and greatest_candidate_semver:
+        min_version = parse_to_semver(min_version)
 
+        if greatest_candidate_semver <= min_version:
+            return None
 
-# alias with a more expressive (and correct..) name
-greatest_version = find_latest_version
+    return greatest_candidate
 
 
 def greatest_version_with_matching_major(
@@ -457,10 +470,6 @@ def greatest_version_with_matching_minor(
                 latest_candidate = candidate
 
     return latest_candidate
-
-
-# alias for backwards-compatibility
-find_latest_version_with_matching_minor = greatest_version_with_matching_minor
 
 
 def find_smallest_version_with_matching_minor(
@@ -578,3 +587,79 @@ def smallest_versions(
     purge_idx = versions_count - keep
 
     return versions[:purge_idx]
+
+
+def iter_upgrade_path(
+    whence: Version,
+    whither: Version,
+    versions: collections.abc.Iterable[Version],
+) -> collections.abc.Iterable[semver.VersionInfo]:
+    '''
+    returns an iterable of versions marking the upgrade-path between whence and whither versions.
+
+    The upgrade-path is determined heuristically, by assuming semver-semantics. The upgrade-path
+    is considered to be useful to collect release-notes, assuming that any releases of less
+    significance (e.g. patch-level-releases) contain changes that were either downported (i.e.
+    also included in greater versions, including release-ntoes), or not relevant for upstream (in
+    which case it is not of interest to collect release-notes).
+
+    Firstly, the left-most differing version-part is determined.
+
+    If major-version is different, then upgrade-path will consist of the sequence of smallest
+    versions of each major-version until (including) `whither`-version. Any additional versions
+    with major-version matching `whither`-version will be yielded (including whither-version),
+    in ascending order.
+
+    If major-version is equal, but minor-version is different, then all smallest versions with
+    matching minor- and major-version will be yielded (in ascending order), followed by all versions
+    with matching major and minor-version to `whither`-version (in ascending order), including
+    `whither`-version.
+
+    If major, and minor-versions are equal, versions with patch-levels between `whence` and
+    `whither` will be yielded, in ascending order, including `whither`-version.
+    '''
+    whence = parse_to_semver(whence)
+    whither = parse_to_semver(whither)
+
+    if not whence < whither:
+        raise ValueError(f'{whence=} must be smaller than {whither=}')
+
+    major_eq = whence.major == whither.major
+
+    versions = [ # <parsed, original>
+        (pv, v) for v in versions
+        if (pv := parse_to_semver(v)) > whence and pv <= whither
+    ]
+    versions = sorted(
+        versions,
+        key=lambda x: x[0],
+    )
+
+    last = whence
+    if not major_eq:
+        # major-versions differ - yield smallest versions for each major-version until whither
+        # (as versions are already sorted, it is sufficient to keep last yielded)
+        for version, orig_version in versions:
+            if version.major == whither.major:
+                yield orig_version
+            elif version.major > last.major:
+                last = version
+                yield orig_version
+        return
+
+    minor_eq = whence.minor == whither.minor
+    last = whence
+    if not minor_eq:
+        # major versions are equal, minor versions differ. yield smallest version for each
+        # minor-version until whither
+        for version, orig_version in versions:
+            if version.minor == whither.minor:
+                yield orig_version
+            elif version.minor > last.minor:
+                last = version
+                yield orig_version
+        return
+
+    # major and minor versions are equal - yield all
+    for _, orig_version in versions:
+        yield orig_version

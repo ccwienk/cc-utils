@@ -35,6 +35,25 @@ inputs:
     required: true
     description: |
       a filepath pointing to a file that was created before the head-commit
+  to-artefact:
+    required: false
+    description: |
+      if specified, the captured commits will also be uploaded as an artefact of the specified
+      name. The artefact will contain a single TARchive w/ the same contents as the `commit-objects`
+      output. Its name will be `commit-objects.tar.gz`
+  commit-summary:
+    description: |
+      controls the step-summary to be emitted by this action.
+
+      `short` will contain the changed files + commit-message
+      `full`  will also contain the full diff
+      `none`  will result in no summary
+    default: short
+    type: choice
+    options:
+      - short
+      - full
+      - none
 
 outputs:
   commit-digest:
@@ -66,10 +85,21 @@ runs:
             ${ts_ref} \
             ${commit_out}
 
-        tar tf commit-objects.tar
+        tar tf ${objects_out}
+        objects_size=$(stat --format=%s ${objects_out})
+        objects_max_size=65536 # 64 KiB
 
         echo "commit-digest=$(cat ${commit_out})" >> ${GITHUB_OUTPUT}
-        echo "commit-objects=$(cat ${objects_out} | base64 -w0)" >> ${GITHUB_OUTPUT}
+        if [ ${objects_size} -lt ${objects_max_size} ]; then
+          echo "commit-objects=$(cat ${objects_out} | base64 -w0)" >> ${GITHUB_OUTPUT}
+        else
+          echo "Warning: captured objects were too large (${objects_size} octets)"
+          echo "commit-objects output will not be set"
+        fi
+
+        summary_kind="${{ inputs.commit-summary }}"
+
+        if [ "${summary_kind}" == 'full' ]; then
         cat << EOF > ${GITHUB_STEP_SUMMARY}
         ## Capture-Commit Summary
         commit-digest: \`$(cat ${commit_out})\`
@@ -78,5 +108,26 @@ runs:
         commit-message:
         $(git show)
         EOF
-        git clean -dfx
+
+        elif [ "${summary_kind}" == 'short' ]; then
+        cat << EOF > ${GITHUB_STEP_SUMMARY}
+        ## Capture-Commit Summary
+        commit-digest: \`$(cat ${commit_out})\`
+        objects-listing (tarfile):
+        $(tar tf ${objects_out})
+        EOF
+
+        elif [ "${summary_kind}" == 'none' ]; then
+          echo "will not print a summary"
+        else
+          echo "Error: unexpected summary-kind: ${summary_kind}"
+          exit 1
+        fi
+
+        gzip ${objects_out}
       shell: bash
+    - uses: actions/upload-artifact@v4
+      if: ${{ inputs.to-artefact != '' }}
+      with:
+        name: ${{ inputs.to-artefact }}
+        path: commit-objects.tar.gz

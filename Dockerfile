@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ghcr.io/gardener/cc-utils/job-image-base:0.106.0
+ARG BASE_IMAGE=ghcr.io/gardener/cc-utils/job-image-base:0.107.0
 FROM $BASE_IMAGE AS builder
 COPY VERSION /metadata/VERSION
 COPY . /cc/utils/
@@ -13,12 +13,9 @@ RUN cat /cc/utils/gardener-cicd-libs.apk-packages \
   gardener-cicd-cli==$(cat /metadata/VERSION) \
   pycryptodome
 
-FROM ghcr.io/open-component-model/ocm/ocm.software/ocmcli/ocmcli-image:0.18.0 AS ocm-cli
 FROM $BASE_IMAGE
 
 ARG TARGETARCH
-
-COPY --from=ocm-cli /bin/ocm /bin/ocm
 
 COPY --from=builder /pkgs/usr /usr
 COPY --from=builder /cc/utils/bin /cc/utils/bin

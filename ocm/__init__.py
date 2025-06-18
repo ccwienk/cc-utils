@@ -211,10 +211,20 @@ class ResourceRelation(enum.StrEnum):
     EXTERNAL = 'external'
 
 
+@dc
+class MergeSpec:
+    algorithm: str | None = None # OCM schema requires /^[a-z][a-z0-9/_-]+$/
+    config: str | int | float | bool | dict | list | None = None
+
+
 @dc(frozen=True)
 class Label:
     name: str
     value: str | int | float | bool | dict | list
+    version: str | None = None # OCM schema requires /^v[0-9]+$/
+    signing: bool = False
+    # merge: MergeSpec | None = None # `null` aka. `None` is not allowed by JSON-schema
+    # TODO when re-enabling: remove from normalisation again
 
 
 _no_default = object()
@@ -257,6 +267,7 @@ class LabelMethodsMixin:
 class NormalisationAlgorithm(enum.StrEnum):
     JSON_NORMALISATION = 'jsonNormalisation/v1'
     OCI_ARTIFACT_DIGEST = 'ociArtifactDigest/v1'
+    GENERIC_BLOB_DIGEST = 'genericBlobDigest/v1'
 
 
 @dc
@@ -300,10 +311,17 @@ class SignatureSpec:
 
 
 @dc
+class TimestampSpec:
+    value: str | None = None
+    time: str | None = None # date-time according to RFC3339 (rounded to seconds): %Y-%m-%dT%H:%M:%SZ
+
+
+@dc
 class Signature:
     name: str
     digest: DigestSpec
     signature: SignatureSpec
+    # timestamp: TimestampSpec | None = None # `null` aka. `None` is not allowed by JSON-schema
 
 
 @dc
@@ -442,6 +460,13 @@ class ComponentReference(Artifact, LabelMethodsMixin):
     extraIdentity: dict[str, str] = dataclasses.field(default_factory=dict)
     labels: list[Label] = dataclasses.field(default_factory=tuple)
 
+    @property
+    def component_id(self) -> ComponentIdentity:
+        return ComponentIdentity(
+            name=self.componentName,
+            version=self.version,
+        )
+
 
 @dc
 class SourceReference(LabelMethodsMixin):
@@ -576,6 +601,22 @@ class Component(LabelMethodsMixin):
             yield from self.resources
 
 
+@dc
+class NestedDigestSpec:
+    name: str
+    version: str | None
+    extraIdentity: dict[str, str] = dataclasses.field(default_factory=dict)
+    digest: DigestSpec | None = None
+
+
+@dc
+class NestedComponentDigests:
+    name: str     # must be valid URL w/o schema
+    version: str  # relaxed semver
+    digest: DigestSpec | None = None
+    resourceDigests: list[NestedDigestSpec] = dataclasses.field(default_factory=list)
+
+
 @functools.lru_cache
 def _read_schema_file(schema_file_path: str):
     with open(schema_file_path) as f:
@@ -596,6 +637,7 @@ class ComponentDescriptor:
     meta: Metadata
     component: Component
     signatures: list[Signature] = dataclasses.field(default_factory=list)
+    nestedDigests: list[NestedComponentDigests] = dataclasses.field(default_factory=list)
 
     @staticmethod
     def validate(
@@ -713,3 +755,24 @@ class EnumJSONEncoder(json.JSONEncoder):
         elif isinstance(o, datetime.datetime):
             return o.isoformat()
         return super().default(o)
+
+
+# shortcut-aliases
+Callable = collections.abc.Callable
+Iterable = collections.abc.Iterable
+
+
+# Type-Aliases (for interoperability w/ external implementations)
+ComponentName = str | tuple[str, str] | Component | ComponentIdentity
+OcmRepositoryLookup = Callable[
+    [ComponentName],
+    Iterable[OciOcmRepository],
+]
+ComponentDescriptorLookup = Callable[
+    [ComponentIdentity, OcmRepositoryLookup],
+    ComponentDescriptor
+]
+VersionLookup = Callable[
+    [ComponentName, OcmRepository],
+    Iterable[str],
+]

@@ -2,21 +2,19 @@ import collections.abc
 import dataclasses
 import datetime
 import logging
-import requests
 import time
 import typing
 
 import dacite
+import requests.exceptions
+import requests.sessions
 
 import ocm
 
 import ci.util
-import cnudie.iter
-import cnudie.retrieve
 import cnudie.util
 import delivery.jwt
 import delivery.model as dm
-import dso.model
 import http_requests
 
 
@@ -100,21 +98,6 @@ class DeliveryServiceRoutes:
             'artefacts',
             'metadata',
             'query',
-        )
-
-    def os_branches(self, os_id: str):
-        return ci.util.urljoin(
-            self._base_url,
-            'os',
-            os_id,
-            'branches',
-        )
-
-    def components_metadata(self):
-        return ci.util.urljoin(
-            self._base_url,
-            'components',
-            'metadata',
         )
 
     def cache(self):
@@ -256,7 +239,14 @@ class DeliveryServiceClient:
         headers: dict=None,
         **kwargs,
     ):
-        self._authenticate()
+        try:
+            self._authenticate()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 400:
+                raise
+            if e.response.json().get('error_id') != 'feature-inactive':
+                raise
+            logger.info('delivery-service authentication feature is inactive')
 
         headers = headers or {}
 
@@ -352,7 +342,7 @@ class DeliveryServiceClient:
 
     def update_metadata(
         self,
-        data: collections.abc.Iterable[dso.model.ArtefactMetadata],
+        data: collections.abc.Iterable[typing.Union[dict, 'ArtefactMetadata']],
     ):
         headers = {
             'Content-Type': 'application/json',
@@ -363,7 +353,8 @@ class DeliveryServiceClient:
                 dataclasses.asdict(
                     artefact_metadata,
                     dict_factory=ci.util.dict_to_json_factory,
-                ) for artefact_metadata in data
+                ) if dataclasses.is_dataclass(artefact_metadata) else artefact_metadata
+                for artefact_metadata in data
             ]},
             headers=headers,
         )
@@ -380,7 +371,7 @@ class DeliveryServiceClient:
 
     def delete_metadata(
         self,
-        data: collections.abc.Iterable[dso.model.ArtefactMetadata],
+        data: collections.abc.Iterable[typing.Union[dict, 'ArtefactMetadata']],
     ):
         headers = {
             'Content-Type': 'application/json',
@@ -391,7 +382,8 @@ class DeliveryServiceClient:
                 dataclasses.asdict(
                     artefact_metadata,
                     dict_factory=ci.util.dict_to_json_factory,
-                ) for artefact_metadata in data
+                ) if dataclasses.is_dataclass(artefact_metadata) else artefact_metadata
+                for artefact_metadata in data
             ]},
             headers=headers,
         )
@@ -414,7 +406,8 @@ class DeliveryServiceClient:
         version_filter: str | None=None,
         component: ocm.Component | ocm.ComponentDescriptor=None,
         artifact: ocm.Artifact | str=None,
-    ) -> tuple[dict, list[dm.Status]]:
+        absent_ok: bool=False,
+    ) -> tuple[list[dict] | None, list[dm.Status] | None]:
         '''
         retrieves component-responsibles and optional status info.
         Status info can be used to communicate additional information, e.g. that responsible-label
@@ -433,10 +426,8 @@ class DeliveryServiceClient:
         '''
 
         if any((name, version, ocm_repo_url)):
-            if not all((name, version)):
-                raise ValueError('either all or none of name and version must be set')
-            elif component:
-                raise ValueError('must pass either name, version (and ocm_repo_url) OR component')
+            if component:
+                raise ValueError('must pass either name (and version and ocm_repo_url) OR component')
         elif component and (component := cnudie.util.to_component(component)):
             name = component.name
             version = component.version
@@ -447,8 +438,9 @@ class DeliveryServiceClient:
 
         params = {
             'component_name': name,
-            'version': version,
         }
+        if version:
+            params['version'] = version
         if ocm_repo_url:
             params['ocm_repo_url'] = ocm_repo_url
         if version_filter is not None:
@@ -479,7 +471,14 @@ class DeliveryServiceClient:
                 break
             time.sleep(5)
 
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404 and absent_ok:
+                logger.warning(f'delivery service returned 404 for responsibles with {params=}')
+                return None, None
+            raise
+
         resp_json: dict = resp.json()
 
         responsibles = resp_json['responsibles']
@@ -533,12 +532,12 @@ class DeliveryServiceClient:
     def query_metadata(
         self,
         components: collections.abc.Iterable[ocm.Component]=(),
-        artefacts: collections.abc.Iterable[dso.model.ComponentArtefactId]=(),
-        type: dso.model.Datatype | tuple[dso.model.Datatype]=None,
-        referenced_type: dso.model.Datatype | tuple[dso.model.Datatype]=None,
-    ) -> tuple[dso.model.ArtefactMetadata]:
+        artefacts: collections.abc.Iterable[typing.Union[dict, 'ComponentArtefactId']]=(),
+        type: str | collections.abc.Sequence[str]=None,
+        referenced_type: str | collections.abc.Sequence[str]=None,
+    ) -> tuple[dict]:
         '''
-        Query artefact metadata from the delivery-db and parse it as `dso.model.ArtefactMetadata`.
+        Query artefact metadata from the delivery-db.
 
         @param components:      component identities used for filtering; if no identities are
                                 specified, no component filtering is done
@@ -572,7 +571,7 @@ class DeliveryServiceClient:
             ]
         else:
             entries = [
-                dataclasses.asdict(artefact)
+                dataclasses.asdict(artefact) if dataclasses.is_dataclass(artefact) else artefact
                 for artefact in artefacts
             ]
 
@@ -594,132 +593,7 @@ class DeliveryServiceClient:
 
         artefact_metadata_raw = res.json()
 
-        return tuple(
-            dso.model.ArtefactMetadata.from_dict(raw)
-            for raw in artefact_metadata_raw
-        )
-
-    def os_release_infos(self, os_id: str, absent_ok=False) -> list[dm.OsReleaseInfo]:
-        url = self._routes.os_branches(os_id=os_id)
-
-        res = self.request(
-            url=url,
-        )
-
-        if not absent_ok:
-            res.raise_for_status()
-        elif not res.ok:
-            return None
-
-        return [
-            dm.OsReleaseInfo.from_dict(ri) for ri in res.json()
-        ]
-
-    def components_metadata(
-        self,
-        component_name: str,
-        component_version: str=None,
-        metadata_types: list[str]=[], # empty list returns _all_ metadata-types
-        select: str=None, # either `greatestVersion` or `latestDate`
-    ) -> list[dso.model.ArtefactMetadata]:
-        '''
-        returns a list of artifact-metadata for the given component
-
-        One of 'select' and 'component_version' must be given. However, if 'select' is given as
-        `greatestVersion`, 'version' must _not_ be given.
-        '''
-        url = self._routes.components_metadata()
-
-        resp = self.request(
-            url=url,
-            params={
-                'name': component_name,
-                'version': component_version,
-                'type': metadata_types,
-                'select': select,
-            },
-            timeout=(4, 121),
-        )
-
-        resp.raise_for_status()
-
-        return [
-            dso.model.ArtefactMetadata.from_dict(raw)
-            for raw in resp.json()
-        ]
-
-    def artefact_metadata_for_resource_node(
-        self,
-        resource_node: 'cnudie.iter.ResourceNode',
-        types: list[str],
-    ) -> collections.abc.Generator[dso.model.ArtefactMetadata, None, None]:
-        '''Return an iterable that contains all stored `ArtefactMetadata` of the given type for the
-        given resource node.
-
-        For possible values for `type` see `dso.model.Datatype`.
-        '''
-
-        component = resource_node.component
-        resource = resource_node.resource
-
-        for component_metadata in self.components_metadata(
-            component_name=component.name,
-            metadata_types=types,
-            component_version=component.version,
-        ):
-            if not component_metadata.artefact.component_name == component.name:
-                continue
-            if not component_metadata.artefact.artefact.artefact_name == resource.name:
-                continue
-            if not component_metadata.artefact.artefact.artefact_version == resource.version:
-                continue
-
-            yield component_metadata
-
-    def metadata(
-        self,
-        component: cnudie.retrieve.ComponentName=None,
-        artefact: str=None,
-        node: cnudie.iter.Node=None,
-        types: collections.abc.Iterable[str]=None,
-    ) -> collections.abc.Generator[dso.model.ArtefactMetadata, None, None]:
-        if component:
-            component = cnudie.util.to_component_id(component)
-
-        if types:
-            types = tuple(types)
-
-        if not (bool(component) ^ bool(node)):
-            raise ValueError('exactly one of component, node must be passed')
-
-        if node:
-            component = node.component
-            artefact = node.artefact
-
-        if isinstance(artefact, ocm.Artifact):
-            artefact_name = artefact.name
-            artefact_version = artefact.version
-        elif isinstance(artefact, str):
-            artefact_name = artefact
-            artefact_version = None
-
-        for metadata in self.components_metadata(
-            component_name=component.name,
-            component_version=component.version,
-            metadata_types=types,
-        ):
-            if not artefact:
-                yield metadata
-                continue
-
-            # todo: also check for artefact-type + consider version is an optional attr
-            #       + consider extra-id (keep it simple for now)
-            artefact_id = metadata.artefact.artefact
-            if artefact_name and artefact_id.artefact_name != artefact_name:
-                continue
-            if artefact_version and artefact_id.artefact_version != artefact_version:
-                continue
-            yield metadata
+        return tuple(artefact_metadata_raw)
 
     def mark_cache_for_deletion(
         self,
@@ -750,7 +624,7 @@ class DeliveryServiceClient:
     def create_backlog_item(
         self,
         service: str,
-        artefacts: collections.abc.Iterable[dso.model.ComponentArtefactId]=(),
+        artefacts: collections.abc.Iterable[typing.Union[dict, 'ComponentArtefactId']]=(),
         priority: str | None=None, # see delivery-service k8s/backlog for allowed priorities
     ):
         headers = {
@@ -766,7 +640,7 @@ class DeliveryServiceClient:
 
         data, headers = http_requests.encode_request(
             json={'artefacts': [
-                dataclasses.asdict(artefact)
+                dataclasses.asdict(artefact) if dataclasses.is_dataclass(artefact) else artefact
                 for artefact in artefacts
             ]},
             headers=headers,
@@ -793,10 +667,10 @@ def _normalise_github_hostname(github_url: str):
     return github_hostname.lower()
 
 
-def github_users_from_responsibles(
+def github_usernames_from_responsibles(
     responsibles: collections.abc.Iterable[dict],
     github_url: str=None,
-) -> collections.abc.Generator[dm.GithubUser, None, None]:
+) -> collections.abc.Generator[str, None, None]:
     '''
     returns a generator yielding all github-users from the given `responsibles`.
     use `DeliveryServiceClient.component_responsibles` to retrieve responsibles
@@ -820,4 +694,4 @@ def github_users_from_responsibles(
             if target_github_hostname and target_github_hostname != github_hostname:
                 continue
 
-            yield dm.GithubUser(username=username, github_hostname=github_hostname)
+            yield username

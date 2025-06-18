@@ -7,16 +7,7 @@ jobs:
     uses: ./.github/workflows/build-and-test.yaml
     with:
       mode: snapshot
-      version-prerelease: "${commit_digest}"
-      version-commit-message: "build ${version}"
-  component-descriptor:
-    runs-on: ubuntu-latest
+  post-build:
     needs:
       - build-and-test
-    steps:
-      - uses: actions/checkout@v4
-      - name: collect-component-descriptor
-        uses: ./.github/actions/merge-ocm-fragments
-        with:
-          component-descriptor: ${{ needs.build-and-test.outputs.base-component-descriptor }}
-          outdir: /tmp/ocm
+    uses: ./.github/workflows/post-build.yaml

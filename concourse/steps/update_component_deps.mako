@@ -51,6 +51,7 @@ import concourse.model.traits.release
 import concourse.model.traits.update_component_deps
 import ctx
 import ocm
+import ocm.gardener
 import github.util
 import gitutil
 import oci.auth as oa
@@ -59,7 +60,6 @@ logger = logging.getLogger('step.update_component_deps')
 
 
 ${step_lib('update_component_deps')}
-${step_lib('images')}
 
 
 # must point to this repository's root directory
@@ -82,24 +82,17 @@ merge_policy_configs = [
     concourse.model.traits.update_component_deps.MergePolicyConfig(cfg)
     for cfg in ${[p.raw for p in update_component_deps_trait.merge_policies()]}
 ]
-merge_policy_and_filters = {
-    p: component_ref_component_name_filter(
-        include_regexes=p.component_names(),
-        exclude_regexes=(),
-    ) for p in merge_policy_configs
-}
+merge_policies = concourse.model.traits.update_component_deps.MergePolicies(
+    policies=merge_policy_configs,
+)
 # indicates whether or not an upstream component was defined as a reference
 upstream_component_name = os.environ.get('UPSTREAM_COMPONENT_NAME', None)
 UPGRADE_TO_UPSTREAM = bool(upstream_component_name)
 
 logger.info(f'{UPGRADE_TO_UPSTREAM=}')
 
-pull_request_util = github.util.PullRequestUtil(
-    owner=REPO_OWNER,
-    name=REPO_NAME,
-    default_branch=REPO_BRANCH,
-    github_api=ccc.github.github_api(github_cfg),
-)
+github_api = ccc.github.github_api(github_cfg)
+repository = github_api.repository(REPO_OWNER, REPO_NAME)
 
 ## hack / workaround: rebase to workaround concourse sometimes not refreshing git-resource
 git_helper.rebase(
@@ -107,7 +100,8 @@ git_helper.rebase(
 )
 
 upgrade_pull_requests = list(
-    pull_request_util.enumerate_upgrade_pull_requests(
+    github.pullrequest.iter_upgrade_pullrequests(
+        repository=repository,
         state='all',
     ),
 )
@@ -142,9 +136,6 @@ version_lookup = cnudie.retrieve.version_lookup(
     oci_client=oci_client,
 )
 
-# we at most need to do this once
-os.environ['DOCKERD_STARTED'] = 'no'
-
 % if pullrequest_body_suffix:
 import textwrap
 % endif
@@ -157,39 +148,42 @@ if list(cfg_set._cfg_elements('delivery_endpoints')):
 else:
     delivery_dashboard_url = None
 
-# find components that need to be upgraded
-for from_ref, to_version in determine_upgrade_prs(
-    upstream_component_name=upstream_component_name,
-    upstream_update_policy=upstream_update_policy,
-    upgrade_pull_requests=upgrade_pull_requests,
-    ocm_lookup=ocm_lookup,
-    version_lookup=version_lookup,
-    ignore_prerelease_versions=${ignore_prerelease_versions},
-):
-    applicable_merge_policy = [
-        policy for policy, filter_func in merge_policy_and_filters.items() if filter_func(from_ref)
-    ]
-    if len(applicable_merge_policy) > 1:
-        if any([
-            p.merge_mode() is not applicable_merge_policy[0].merge_mode()
-            for p in applicable_merge_policy
-        ]):
-            raise RuntimeError(f'Conflicting merge policies found to apply to {from_ref.name}')
-        merge_policy = applicable_merge_policy[0].merge_mode()
-        merge_method = applicable_merge_policy[0].merge_method()
-    elif len(applicable_merge_policy) == 0:
+greatest_component_references = ocm.gardener.iter_greatest_component_references(
+    references=ocm.gardener.iter_component_references(component=own_component),
+)
+
+existing_upgrade_vectors = [u.upgrade_vector for u in upgrade_pull_requests]
+
+for component_reference in greatest_component_references:
+    upgrade_vector = determine_upgrade_vector(
+        component_reference=component_reference,
+        upstream_component_name=upstream_component_name,
+        upstream_update_policy=upstream_update_policy,
+        upgrade_pull_requests=upgrade_pull_requests,
+        ocm_lookup=ocm_lookup,
+        version_lookup=version_lookup,
+        ignore_prerelease_versions=${ignore_prerelease_versions},
+    )
+
+    if upgrade_vector is None:
+        continue # did not find a suitable update-vector
+
+    if upgrade_vector in existing_upgrade_vectors:
+        logger.info(f'found existing pullrequest for {upgrade_vector=} - skipping')
+        continue
+
+    merge_policy = merge_policies.merge_policy_for(upgrade_vector.component_name)
+    merge_method = merge_policies.merge_method_for(upgrade_vector.component_name)
+
+    if not merge_policy:
         merge_policy = concourse.model.traits.update_component_deps.MergePolicy.MANUAL
+
+    if not merge_method:
         merge_method = concourse.model.traits.update_component_deps.MergeMethod.MERGE
-    else:
-        merge_policy = applicable_merge_policy[0].merge_mode()
-        merge_method = applicable_merge_policy[0].merge_method()
 
     pull_request = create_upgrade_pr(
-        component=own_component,
-        from_ref=from_ref,
-        to_ref=from_ref,
-        to_version=to_version,
-        pull_request_util=pull_request_util,
+        upgrade_vector=upgrade_vector,
+        repository=repository,
         upgrade_script_path=os.path.join(REPO_ROOT, '${set_dependency_version_script_path}'),
         upgrade_script_relpath='${set_dependency_version_script_path}',
         git_helper=git_helper,
@@ -219,7 +213,7 @@ for from_ref, to_version in determine_upgrade_prs(
     # consideration
     upgrade_pull_requests.append(pull_request)
 
-for upgrade_pull_request in github.util.iter_obsolete_upgrade_pull_requests(
+for upgrade_pull_request in github.pullrequest.iter_obsolete_upgrade_pull_requests(
     list(upgrade_pull_requests)
 ):
     upgrade_pull_request.purge()

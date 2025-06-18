@@ -120,11 +120,19 @@ def replicate_artifact(
     accept = mode.accept_header()
 
     # we need the unaltered - manifest for verbatim replication
-    raw_manifest = client.manifest_raw(
+    resp = client.manifest_raw(
         image_reference=src_image_reference,
         accept=accept,
-    ).text
+    )
+    raw_manifest = resp.text
     manifest = json.loads(raw_manifest)
+
+    # workaround: some manifests do not contain `mediaType`
+    #             -> fallback to Content-Type header
+    if not 'mediaType' in manifest:
+        if (media_type := resp.headers.get('Content-Type')):
+            manifest['mediaType'] = media_type
+
     schema_version = int(manifest['schemaVersion'])
     need_to_synthesise_cfg_blob = False
 
@@ -151,7 +159,6 @@ def replicate_artifact(
         need_uncompressed_layer_digests = True
         uncompressed_layer_digests = []
     elif schema_version == 2:
-        manifest = json.loads(raw_manifest)
         media_type = manifest.get('mediaType', om.DOCKER_MANIFEST_SCHEMA_V2_MIME)
 
         if media_type in (

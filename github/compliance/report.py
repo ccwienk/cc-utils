@@ -160,27 +160,6 @@ def _ocm_result_group_template_vars(
     }
 
 
-def _os_info_template_vars(
-    result_group: gcm.ScanResultGroup,
-) -> dict:
-    worst_result = result_group.worst_result
-    worst_result: gcm.OsIdScanResult
-    os_info = worst_result.os_id
-    os_name_and_version = f'{os_info.ID}:{os_info.VERSION_ID}'
-    component = result_group.component
-    artifacts = [gcm.artifact_from_node(res.scanned_element) for res in result_group.results]
-
-    return {
-        'summary': _compliance_status_summary(
-            component=component,
-            artifacts=artifacts,
-            issue_value=os_name_and_version,
-            issue_description='Outdated OS-Version',
-            report_urls=(),
-        ),
-    }
-
-
 def _cfg_policy_violation_template_vars(result_group: gcm.ScanResultGroup) -> dict:
     results: tuple[gcm.CfgScanResult] = result_group.results_with_findings
     result = results[0]
@@ -235,10 +214,7 @@ def _template_vars(
             'cfg_element_qualified_name': scanned_element.name,
         }
 
-    if issue_type == _compliance_label_os_outdated:
-        template_variables |= _os_info_template_vars(result_group)
-
-    elif issue_type in (
+    if issue_type in (
         _compliance_label_credentials_outdated,
         _compliance_label_no_responsible,
         _compliance_label_no_rule,
@@ -335,15 +311,15 @@ def _scanned_element_assignees(
             )
             statuses = set(statuses)
 
-            gh_users = delivery.client.github_users_from_responsibles(
+            gh_usernames = delivery.client.github_usernames_from_responsibles(
                 responsibles=responsibles,
                 github_url=repository.url,
             )
 
             assignees = set(
-                gh_user.username for gh_user in gh_users
+                gh_username for gh_username in gh_usernames
                 if github.user.is_user_active(
-                    username=gh_user.username,
+                    username=gh_username,
                     github=gh_api,
                 )
             )
@@ -516,7 +492,7 @@ def create_or_update_github_issues(
                     f'issue. Remaining assignees: {assignees}'
                 )
 
-            latest_processing_date = None
+            due_date = None
             target_milestone = None
             failed_milestones = []
 
@@ -524,16 +500,12 @@ def create_or_update_github_issues(
                 try:
                     if not max_processing_days:
                         max_processing_days = gcm.MaxProcessingTimesDays()
-                    max_days = max_processing_days.for_severity(
-                        criticality_classification,
-                    )
-                    latest_processing_date = datetime.date.today() + datetime.timedelta(
-                        days=max_days,
-                    )
+                    max_days = max_processing_days.for_severity(criticality_classification)
+                    due_date = datetime.date.today() + datetime.timedelta(days=max_days)
 
                     target_sprints = gcmi.target_sprints(
                         delivery_svc_client=delivery_svc_client,
-                        latest_processing_date=latest_processing_date,
+                        due_date=due_date,
                         sprints_count=2,
                     )
                     target_milestone, failed_milestones = gcmi.find_or_create_sprint_milestone(
@@ -542,7 +514,7 @@ def create_or_update_github_issues(
                     )
 
                     if target_milestone:
-                        latest_processing_date = target_milestone.due_on.date()
+                        due_date = target_milestone.due_on.date()
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
@@ -581,7 +553,7 @@ def create_or_update_github_issues(
                     assignees_statuses=assignees_statuses,
                     milestone=target_milestone,
                     failed_milestones=failed_milestones,
-                    latest_processing_date=latest_processing_date,
+                    due_date=due_date,
                     ctx_labels=ctx_labels,
                     preserve_labels_regexes=preserve_labels_regexes,
                     known_issues=known_issues,
